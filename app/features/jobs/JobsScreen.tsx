@@ -63,6 +63,13 @@ export default function JobsScreen({ route, navigation }) {
                     headerShown: false,
                 }}
             ></TripsStack.Screen>
+            <TripsStack.Screen
+                name="Cherry Picker"
+                component={CherryPickerScreen}
+                options={{
+                    headerShown: false,
+                }}
+            />
 
             <TripsStack.Screen
                 name="Job Detail"

@@ -212,7 +212,7 @@ const JobsScreenHeader = ({
                 }
                 placement="bottom"
             >
-                <View style={tailwind('flex-row justify-around')}>
+                <View style={tailwind('flex-row justify-around flex-wrap')}>
                     <Pressable
                         onPress={onPress}
                         style={[
@@ -221,6 +221,20 @@ const JobsScreenHeader = ({
                     >
                         <Text style={tailwind('text-white font-bold')}>Edit</Text>
                         <Ionicons name="create" color="white" size={16} style={tailwind('p-1')} />
+                    </Pressable>
+                    <Pressable
+                        onPress={() => navigation.navigate('Cherry Picker')}
+                        style={[
+                            tailwind('flex-row rounded-lg p-2 bg-black items-center ml-1 mr-1'),
+                        ]}
+                    >
+                        <Text style={tailwind('text-white font-bold')}>Cherry</Text>
+                        <Ionicons
+                            name="calculator-outline"
+                            color="white"
+                            size={16}
+                            style={tailwind('p-1')}
+                        />
                     </Pressable>
                     <Pressable
                         onPress={() => navigation.navigate('Add Job')}

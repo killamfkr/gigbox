@@ -23,4 +23,4 @@ npx expo prebuild --platform android --no-install
 cd android && ./gradlew assembleDebug
 ```
 
-Output: `app/android/app/build/outputs/apk/debug/app-debug.apk` (needs JDK 17 + Android SDK).
+Output: `app/android/app/build/outputs/apk/debug/app-debug.apk` (needs **JDK 11** + Android SDK for this Expo/RN stack; CI uses JDK 17 only for `sdkmanager`, then JDK 11 for Gradle).

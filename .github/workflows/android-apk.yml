@@ -46,8 +46,8 @@ jobs:
           cache: yarn
           cache-dependency-path: app/yarn.lock
 
-      # JDK 17+: setup-android@v3 installs cmdline-tools whose sdkmanager requires JDK 17+.
-      - name: Setup Java
+      # sdkmanager from setup-android@v3 requires JDK 17+.
+      - name: Setup Java 17 (Android SDK tools)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -56,14 +56,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # Gradle 6.8 + RN 0.63 Groovy scripts are not reliable on JDK 17 (script compilation failures).
+      - name: Setup Java 11 (Gradle / Expo)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
       - name: Install JS dependencies
         run: yarn install --ignore-engines
 
       - name: Expo prebuild (Android)
         run: npx expo prebuild --platform android --no-install
 
-      # Expo/RN 0.63 template still adds -XX:MaxPermSize (removed in Java 8+). JDK 17 refuses it.
-      - name: Fix Gradle JVM args for Java 17
+      # Old templates may still list MaxPermSize; harmless to strip for any JDK.
+      - name: Sanitize Gradle JVM args in generated project
         run: |
           find android -name gradle.properties -type f 2>/dev/null | while read -r f; do
             sed -i 's/-XX:MaxPermSize=[^ ]*//g' "$f"

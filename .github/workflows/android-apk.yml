@@ -29,7 +29,7 @@ jobs:
   debug-apk:
     name: Prebuild and assembleDebug
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: app
@@ -124,12 +124,66 @@ jobs:
               print("Removed Flipper debugImplementation block from", path)
           PY
 
+      # expo-image-picker still references com.theartofdev.edmodo:android-image-cropper (JCenter only) — use JitPack coordinates.
+      - name: Redirect android-image-cropper to JitPack
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("android/build.gradle")
+          t = p.read_text()
+          marker = "// CI: android-image-cropper (JCenter"
+          if marker in t:
+              print("android/build.gradle already has image-cropper redirect")
+          else:
+              p.write_text(
+                  t.rstrip()
+                  + """
+
+// CI: android-image-cropper (JCenter) → ArthurHub on JitPack (template already lists jitpack.io)
+subprojects { subproject ->
+    subproject.configurations.all { configuration ->
+        configuration.resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'com.theartofdev.edmodo' && details.requested.name == 'android-image-cropper') {
+                details.useTarget('com.github.ArthurHub:Android-Image-Cropper:2.8.0')
+            }
+        }
+    }
+}
+"""
+              )
+              print("Appended image-cropper resolutionStrategy to android/build.gradle")
+          PY
+
       # Old templates may still list MaxPermSize; harmless to strip for any JDK.
       - name: Sanitize Gradle JVM args in generated project
         run: |
           find android -name gradle.properties -type f 2>/dev/null | while read -r f; do
             sed -i 's/-XX:MaxPermSize=[^ ]*//g' "$f"
           done
+
+      # Expo ships react-native as a source tarball without the prebuilt maven repo under node_modules/react-native/android.
+      # ReactAndroid's installArchives task publishes com.facebook.react:react-native for Gradle's dynamic + dependency.
+      - name: Publish React Android to local maven (installArchives)
+        run: |
+          set -euo pipefail
+          cp android/settings.gradle /tmp/android-settings.gradle.bak
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("android/settings.gradle")
+          text = p.read_text()
+          if "':ReactAndroid'" in text:
+              raise SystemExit("settings.gradle already references ReactAndroid")
+          needle = "include ':app'"
+          insert = "include ':ReactAndroid'\nproject(':ReactAndroid').projectDir = new File(rootDir, '../node_modules/react-native/ReactAndroid')\n\n" + needle
+          if needle not in text:
+              raise SystemExit("include ':app' not found in android/settings.gradle")
+          p.write_text(text.replace(needle, insert, 1))
+          PY
+          cd android
+          chmod +x gradlew
+          ./gradlew :ReactAndroid:installArchives --no-daemon --stacktrace
+          cd ..
+          cp /tmp/android-settings.gradle.bak android/settings.gradle
 
       - name: Assemble debug APK
         run: |

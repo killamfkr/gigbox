@@ -74,6 +74,24 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: git checkout HEAD -- app/package.json app/index.js
 
+      # RN 0.63 / Expo 41 templates still use jcenter(), which no longer serves Fresco artifacts required by Flipper.
+      - name: Add Maven Central to Gradle repositories
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("android/build.gradle")
+          text = path.read_text()
+          needle = "        google()\n        jcenter()"
+          replacement = "        google()\n        mavenCentral()\n        jcenter()"
+          if "mavenCentral()" in text:
+              print("android/build.gradle already lists mavenCentral()")
+          elif needle not in text:
+              raise SystemExit("Could not find google()/jcenter() block in android/build.gradle")
+          else:
+              path.write_text(text.replace(needle, replacement))
+              print("Inserted mavenCentral() into", path)
+          PY
+
       # Old templates may still list MaxPermSize; harmless to strip for any JDK.
       - name: Sanitize Gradle JVM args in generated project
         run: |

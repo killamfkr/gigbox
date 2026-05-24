@@ -10,24 +10,40 @@ on:
 jobs:
   build-prod-server:
     name: Build Prod Server
-    if: >
-      github.ref == 'refs/heads/master' && github.event_name == 'push' &&
-      secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      docker_published: ${{ steps.dockerhub.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN not set; skipping Docker image push."
+          fi
       - name: Set up QEMU
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push
         id: docker_build
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/build-push-action@v6
         with:
           push: true
@@ -35,22 +51,38 @@ jobs:
           file: ./server/Dockerfile
           tags: gigbox/gigbox-server:latest
       - name: Image digest
+        if: steps.dockerhub.outputs.ready == 'true'
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   build-branch-server:
     name: Build Branch Server
-    if: >
-      github.event_name == 'push' && github.ref != 'refs/heads/master' &&
-      secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
+    outputs:
+      docker_published: ${{ steps.dockerhub.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN not set; skipping Docker image push."
+          fi
       - name: Set up QEMU
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -59,6 +91,7 @@ jobs:
         run: echo "BRANCH=$(echo $GITHUB_REF | cut -d'/' -f 3)" >> $GITHUB_ENV
       - name: Build and push
         id: docker_build
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/build-push-action@v6
         with:
           push: true
@@ -66,22 +99,40 @@ jobs:
           file: ./server/Dockerfile
           tags: gigbox/gigbox-server:${{ env.BRANCH }}
       - name: Image digest
+        if: steps.dockerhub.outputs.ready == 'true'
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   build-review-server:
     name: Build PR Review Server
     if: >
       github.event_name == 'pull_request' &&
-      secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    outputs:
+      docker_published: ${{ steps.dockerhub.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN not set; skipping Docker image push."
+          fi
       - name: Set up QEMU
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -90,6 +141,7 @@ jobs:
         run: echo "BRANCH=$(echo $GITHUB_REF | cut -d'/' -f 3)" >> $GITHUB_ENV
       - name: Build and push
         id: docker_build
+        if: steps.dockerhub.outputs.ready == 'true'
         uses: docker/build-push-action@v6
         with:
           push: true
@@ -97,6 +149,7 @@ jobs:
           file: ./server/Dockerfile
           tags: gigbox/gigbox-server:pr-${{github.event.number}}
       - name: Image digest
+        if: steps.dockerhub.outputs.ready == 'true'
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   lint-helm:
@@ -112,7 +165,9 @@ jobs:
   deploy-prod-server:
     name: Deploy production server
     runs-on: 'ubuntu-latest'
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: >
+      github.ref == 'refs/heads/master' && github.event_name == 'push' &&
+      needs.build-prod-server.outputs.docker_published == 'true'
     needs:
       - lint-helm
       - build-prod-server
@@ -139,7 +194,9 @@ jobs:
 
   deploy-review-server:
     runs-on: 'ubuntu-latest'
-    if: github.event_name == 'pull_request'
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.build-review-server.outputs.docker_published == 'true'
     needs:
       - lint-helm
       - build-review-server
@@ -171,7 +228,9 @@ jobs:
 
   deploy-branch-server:
     runs-on: 'ubuntu-latest'
-    if: github.event_name == 'push'
+    if: >
+      github.event_name == 'push' &&
+      needs.build-branch-server.outputs.docker_published == 'true'
     needs:
       - lint-helm
       - build-branch-server

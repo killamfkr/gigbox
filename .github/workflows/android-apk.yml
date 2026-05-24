@@ -1,0 +1,199 @@
+# Build a sideloadable Android debug APK (Expo prebuild + Gradle).
+#
+# After this file is on your default branch:
+#   GitHub → Actions → "Android APK (debug)" → Run workflow
+#
+# Artifacts: gigbox-debug-<sha> contains app-debug.apk
+name: Android APK (debug)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug-apk:
+    name: Prebuild and assembleDebug
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 14.x
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+
+      # sdkmanager from setup-android@v3 requires JDK 17+.
+      - name: Setup Java 17 (Android SDK tools)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Gradle 6.8 + RN 0.63 Groovy scripts are not reliable on JDK 17 (script compilation failures).
+      - name: Setup Java 11 (Gradle / Expo)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
+      - name: Install JS dependencies
+        run: yarn install --ignore-engines
+
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --no-install
+
+      # expo-cli rewrites package.json (e.g. downgrades react-native-unimodules). Restore the committed manifests.
+      - name: Restore package manifests after prebuild
+        working-directory: ${{ github.workspace }}
+        run: git checkout HEAD -- app/package.json app/index.js
+
+      # RN 0.63 / Expo 41 templates still use jcenter(); add Maven Central for anything still published there.
+      - name: Add Maven Central to Gradle repositories
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("android/build.gradle")
+          text = path.read_text()
+          needle = "        google()\n        jcenter()"
+          replacement = "        google()\n        mavenCentral()\n        jcenter()"
+          if "mavenCentral()" in text:
+              print("android/build.gradle already lists mavenCentral()")
+          elif needle not in text:
+              raise SystemExit("Could not find google()/jcenter() block in android/build.gradle")
+          else:
+              path.write_text(text.replace(needle, replacement))
+              print("Inserted mavenCentral() into", path)
+          PY
+
+      # Flipper's Fresco stack pins com.facebook.fresco:*:2.2.0, which was never mirrored to Maven Central (only JCenter).
+      # MainApplication loads Flipper via reflection; omitting these deps is safe for a sideload CI APK.
+      - name: Remove Flipper native dependencies from debug build
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("android/app/build.gradle")
+          text = path.read_text()
+          block = (
+              '    debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}") {\n'
+              "      exclude group:'com.facebook.fbjni'\n"
+              "    }\n"
+              '    debugImplementation("com.facebook.flipper:flipper-network-plugin:${FLIPPER_VERSION}") {\n'
+              "        exclude group:'com.facebook.flipper'\n"
+              "        exclude group:'com.squareup.okhttp3', module:'okhttp'\n"
+              "    }\n"
+              '    debugImplementation("com.facebook.flipper:flipper-fresco-plugin:${FLIPPER_VERSION}") {\n'
+              "        exclude group:'com.facebook.flipper'\n"
+              "    }\n"
+          )
+          if "flipper-fresco-plugin" not in text:
+              print("No Flipper fresco plugin block found; skipping")
+          elif block not in text:
+              raise SystemExit("Flipper block in android/app/build.gradle does not match expected template")
+          else:
+              note = (
+                  "    // Flipper omitted in CI: Fresco 2.2.0 artifacts are not on Maven Central (facebook/fresco#2622).\n"
+              )
+              path.write_text(text.replace(block, note, 1))
+              print("Removed Flipper debugImplementation block from", path)
+          PY
+
+      # expo-image-picker still references com.theartofdev.edmodo:android-image-cropper (JCenter only) — use JitPack coordinates.
+      - name: Redirect android-image-cropper to JitPack
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("android/build.gradle")
+          t = p.read_text()
+          marker = "// CI: android-image-cropper (JCenter"
+          if marker in t:
+              print("android/build.gradle already has image-cropper redirect")
+          else:
+              p.write_text(
+                  t.rstrip()
+                  + """
+
+// CI: android-image-cropper (JCenter) → ArthurHub on JitPack (template already lists jitpack.io)
+subprojects { subproject ->
+    subproject.configurations.all { configuration ->
+        configuration.resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'com.theartofdev.edmodo' && details.requested.name == 'android-image-cropper') {
+                details.useTarget('com.github.ArthurHub:Android-Image-Cropper:2.8.0')
+            }
+        }
+    }
+}
+"""
+              )
+              print("Appended image-cropper resolutionStrategy to android/build.gradle")
+          PY
+
+      # Old templates may still list MaxPermSize; harmless to strip for any JDK.
+      - name: Sanitize Gradle JVM args in generated project
+        run: |
+          find android -name gradle.properties -type f 2>/dev/null | while read -r f; do
+            sed -i 's/-XX:MaxPermSize=[^ ]*//g' "$f"
+          done
+
+      # Expo ships react-native as a source tarball without the prebuilt maven repo under node_modules/react-native/android.
+      # ReactAndroid's installArchives task publishes com.facebook.react:react-native for Gradle's dynamic + dependency.
+      - name: Publish React Android to local maven (installArchives)
+        run: |
+          set -euo pipefail
+          cp android/settings.gradle /tmp/android-settings.gradle.bak
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("android/settings.gradle")
+          text = p.read_text()
+          if "':ReactAndroid'" in text:
+              raise SystemExit("settings.gradle already references ReactAndroid")
+          needle = "include ':app'"
+          insert = "include ':ReactAndroid'\nproject(':ReactAndroid').projectDir = new File(rootDir, '../node_modules/react-native/ReactAndroid')\n\n" + needle
+          if needle not in text:
+              raise SystemExit("include ':app' not found in android/settings.gradle")
+          p.write_text(text.replace(needle, insert, 1))
+          PY
+          cd android
+          chmod +x gradlew
+          ./gradlew :ReactAndroid:installArchives --no-daemon --stacktrace
+          cd ..
+          cp /tmp/android-settings.gradle.bak android/settings.gradle
+
+      - name: Assemble debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gigbox-debug-${{ github.sha }}
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

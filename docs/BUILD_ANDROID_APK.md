@@ -24,3 +24,7 @@ cd android && ./gradlew assembleDebug
 ```
 
 Output: `app/android/app/build/outputs/apk/debug/app-debug.apk` (needs **JDK 11** + Android SDK for this Expo/RN stack; CI uses JDK 17 only for `sdkmanager`, then JDK 11 for Gradle).
+
+## Troubleshooting
+
+If Gradle fails with **missing `react-native-unimodules/gradle.groovy`**, the managed `expo prebuild` template still expects the **`react-native-unimodules`** package under `app/node_modules/`. This repo lists it as an explicit dependency so CI installs it before `./gradlew`.

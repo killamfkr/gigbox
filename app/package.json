@@ -104,6 +104,10 @@
         "styled-components": "^5.2.3",
         "tailwind-rn": "^2.0.1",
         "tailwindcss": "^2.0.2",
+        "unimodules-constants-interface": "~6.1.0",
+        "unimodules-file-system-interface": "~6.1.0",
+        "unimodules-font-interface": "~6.1.0",
+        "unimodules-image-loader-interface": "~6.1.0",
         "victory-native": "34.3.0",
         "wellknown": "^0.5.0"
     },

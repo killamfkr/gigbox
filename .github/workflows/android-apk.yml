@@ -69,6 +69,11 @@ jobs:
       - name: Expo prebuild (Android)
         run: npx expo prebuild --platform android --no-install
 
+      # expo-cli rewrites package.json (e.g. downgrades react-native-unimodules). Restore the committed manifests.
+      - name: Restore package manifests after prebuild
+        working-directory: ${{ github.workspace }}
+        run: git checkout HEAD -- app/package.json app/index.js
+
       # Old templates may still list MaxPermSize; harmless to strip for any JDK.
       - name: Sanitize Gradle JVM args in generated project
         run: |

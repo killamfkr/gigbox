@@ -28,3 +28,7 @@ Output: `app/android/app/build/outputs/apk/debug/app-debug.apk` (needs **JDK 11*
 ## Troubleshooting
 
 If Gradle fails with **missing `react-native-unimodules/gradle.groovy`**, the managed `expo prebuild` template still expects the **`react-native-unimodules`** package under `app/node_modules/`. This repo lists it as an explicit dependency so CI installs it before `./gradlew`.
+
+If Gradle fails with **missing `:unimodules-*-interface`** projects (for example `:unimodules-font-interface`), `react-native-unimodules` only links native packages that exist under `node_modules/`. This repo adds the interface packages **`unimodules-font-interface`**, **`unimodules-constants-interface`**, **`unimodules-file-system-interface`**, and **`unimodules-image-loader-interface`** so Gradle can resolve them for Expo modules such as `expo-font` and `expo-image-picker`.
+
+**Expo prebuild** may rewrite `app/package.json` (for example changing `react-native-unimodules` or `main`). The **Android APK (debug)** workflow restores **`app/package.json`** and **`app/index.js`** from git immediately after prebuild so CI uses the same dependency pins as the repository.

@@ -74,7 +74,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: git checkout HEAD -- app/package.json app/index.js
 
-      # RN 0.63 / Expo 41 templates still use jcenter(), which no longer serves Fresco artifacts required by Flipper.
+      # RN 0.63 / Expo 41 templates still use jcenter(); add Maven Central for anything still published there.
       - name: Add Maven Central to Gradle repositories
         run: |
           python3 <<'PY'
@@ -90,6 +90,38 @@ jobs:
           else:
               path.write_text(text.replace(needle, replacement))
               print("Inserted mavenCentral() into", path)
+          PY
+
+      # Flipper's Fresco stack pins com.facebook.fresco:*:2.2.0, which was never mirrored to Maven Central (only JCenter).
+      # MainApplication loads Flipper via reflection; omitting these deps is safe for a sideload CI APK.
+      - name: Remove Flipper native dependencies from debug build
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("android/app/build.gradle")
+          text = path.read_text()
+          block = (
+              '    debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}") {\n'
+              "      exclude group:'com.facebook.fbjni'\n"
+              "    }\n"
+              '    debugImplementation("com.facebook.flipper:flipper-network-plugin:${FLIPPER_VERSION}") {\n'
+              "        exclude group:'com.facebook.flipper'\n"
+              "        exclude group:'com.squareup.okhttp3', module:'okhttp'\n"
+              "    }\n"
+              '    debugImplementation("com.facebook.flipper:flipper-fresco-plugin:${FLIPPER_VERSION}") {\n'
+              "        exclude group:'com.facebook.flipper'\n"
+              "    }\n"
+          )
+          if "flipper-fresco-plugin" not in text:
+              print("No Flipper fresco plugin block found; skipping")
+          elif block not in text:
+              raise SystemExit("Flipper block in android/app/build.gradle does not match expected template")
+          else:
+              note = (
+                  "    // Flipper omitted in CI: Fresco 2.2.0 artifacts are not on Maven Central (facebook/fresco#2622).\n"
+              )
+              path.write_text(text.replace(block, note, 1))
+              print("Removed Flipper debugImplementation block from", path)
           PY
 
       # Old templates may still list MaxPermSize; harmless to strip for any JDK.

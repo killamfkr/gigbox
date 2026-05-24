@@ -1,17 +1,15 @@
 # pull official base image
 FROM python:3.7.6-buster
 
-ENV PYTHONPATH /usr/lib/python3/dist-packages
-## install dependencies
+ENV PYTHONPATH=/usr/lib/python3/dist-packages
+## install dependencies (avoid apt-get upgrade: it can break Debian's patched pip mid-image)
 RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y netcat-openbsd gcc postgresql-client libgeos-dev python3-opencv python3-pandas libsm6 libxext6 tesseract-ocr && \
-    apt-get clean
-
+    apt-get install -y --no-install-recommends netcat-openbsd gcc postgresql-client libgeos-dev python3-opencv python3-pandas libsm6 libxext6 tesseract-ocr && \
+    rm -rf /var/lib/apt/lists/*
 
 ## set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /usr/src/app
 

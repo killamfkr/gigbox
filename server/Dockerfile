@@ -20,10 +20,9 @@ WORKDIR /app
 RUN addgroup --system user && adduser --system --no-create-home --group user
 RUN chown -R user:user /app && chmod -R 755 /app
 
-# install dependencies
-RUN pip install --upgrade pip
+# install dependencies (skip "pip install -U pip": breaks on Debian-patched pip in this base)
 COPY ./requirements.txt /app/requirements.txt
-RUN pip install --no-cache -r requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # copy project
 COPY . /app/

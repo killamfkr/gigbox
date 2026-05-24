@@ -46,11 +46,12 @@ jobs:
           cache: yarn
           cache-dependency-path: app/yarn.lock
 
+      # JDK 17+: setup-android@v3 installs cmdline-tools whose sdkmanager requires JDK 17+.
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 11
+          java-version: 17
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3

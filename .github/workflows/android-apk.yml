@@ -62,6 +62,13 @@ jobs:
       - name: Expo prebuild (Android)
         run: npx expo prebuild --platform android --no-install
 
+      # Expo/RN 0.63 template still adds -XX:MaxPermSize (removed in Java 8+). JDK 17 refuses it.
+      - name: Fix Gradle JVM args for Java 17
+        run: |
+          find android -name gradle.properties -type f 2>/dev/null | while read -r f; do
+            sed -i 's/-XX:MaxPermSize=[^ ]*//g' "$f"
+          done
+
       - name: Assemble debug APK
         run: |
           cd android

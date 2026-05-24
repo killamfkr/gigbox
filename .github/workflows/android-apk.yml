@@ -1,0 +1,75 @@
+# Build a sideloadable Android debug APK (Expo prebuild + Gradle).
+#
+# After this file is on your default branch:
+#   GitHub → Actions → "Android APK (debug)" → Run workflow
+#
+# Artifacts: gigbox-debug-<sha> contains app-debug.apk
+name: Android APK (debug)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug-apk:
+    name: Prebuild and assembleDebug
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 14.x
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        run: yarn install --ignore-engines
+
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Assemble debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gigbox-debug-${{ github.sha }}
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
